@@ -1,30 +1,22 @@
-var WorkbenchInstanceProvidedLabels = []string{
-	"consumer-project-id",
-	"consumer-project-number",
-	"notebooks-product",
-	"resource-name",
-}
-
-func WorkbenchInstanceLabelsDiffSuppress(k, old, new string, d *schema.ResourceData) bool {
-	// Suppress diffs for the labels
-	for _, label := range WorkbenchInstanceProvidedLabels {
-		if strings.Contains(k, label) && new == "" {
-			return true
-		}
-	}
-
-	// Let diff be determined by labels (above)
-	if strings.Contains(k, "labels.%") {
-		return true
-	}
-
-	// For other keys, don't suppress diff.
-	return false
-}
-
-
 var WorkbenchInstanceSettableUnmodifiableDefaultMetadata = []string{
-	    "serial-port-logging-enable",
+	"install-monitoring-agent",
+	"serial-port-logging-enable",
+	"report-notebook-metrics",
+}
+
+var WorkbenchInstanceEUCProvidedAdditionalMetadata = []string{
+	"enable-oslogin",
+	"disable-ssh",
+	"ssh-keys",
+	"block-project-ssh-keys",
+	"post-startup-script",
+	"post-startup-script-behavior",
+	"startup-script",
+	"startup-script-url",
+	"gce-container-declaration",
+	"gce-software-declaration",
+	"serial-port-enable",
+	"euc-enabled",
 }
 
 var WorkbenchInstanceProvidedMetadata = []string{
@@ -45,13 +37,13 @@ var WorkbenchInstanceProvidedMetadata = []string{
     "dataproc-region",
     "dataproc-service-account",
     "disable-check-xsrf",
+    "enable-euc",
     "framework",
     "generate-diagnostics-bucket",
     "generate-diagnostics-file",
     "generate-diagnostics-options",
     "google-logging-enabled",
     "image-url",
-    "install-monitoring-agent",
     "install-nvidia-driver",
     "installed-extensions",
     "instance-region",
@@ -68,7 +60,6 @@ var WorkbenchInstanceProvidedMetadata = []string{
     "proxy-user-mail",
     "report-container-health",
     "report-event-url",
-    "report-notebook-metrics",
     "report-system-health",
     "report-system-status",
     "resource-url",
@@ -84,6 +75,7 @@ var WorkbenchInstanceProvidedMetadata = []string{
     "enable-guest-attributes",
     "enable-oslogin",
     "proxy-registration-url",
+    "enable-jupyterlab4",
 }
 
 func WorkbenchInstanceMetadataDiffSuppress(k, old, new string, d *schema.ResourceData) bool {
@@ -94,6 +86,14 @@ func WorkbenchInstanceMetadataDiffSuppress(k, old, new string, d *schema.Resourc
 	for _, metadata := range WorkbenchInstanceProvidedMetadata {
 		if key == metadata {
 			return true
+		}
+	}
+	
+	if d.Get("enable_managed_euc").(bool){
+		for _, metadata := range WorkbenchInstanceEUCProvidedAdditionalMetadata {
+			if key == metadata {
+				return true
+			}
 		}
 	}
 
@@ -151,7 +151,7 @@ func WorkbenchInstanceAcceleratorDiffSuppress(_, _, _ string, d *schema.Resource
 	return false
   }
 
-{{- if ne $.Compiler "terraformgoogleconversion-codegen" }}
+{{- if not (contains $.Compiler "terraformgoogleconversion") }}
 // waitForWorkbenchInstanceActive waits for an workbench instance to become "ACTIVE"
 func waitForWorkbenchInstanceActive(d *schema.ResourceData, config *transport_tpg.Config, timeout time.Duration) error {
 	return retry.Retry(timeout, func() *retry.RetryError {
@@ -198,7 +198,7 @@ func WorkbenchInstanceKmsDiffSuppress(_, old, new string, _ *schema.ResourceData
 	return false
 }
 
-{{- if ne $.Compiler "terraformgoogleconversion-codegen" }}
+{{- if not (contains $.Compiler "terraformgoogleconversion") }}
 func waitForWorkbenchOperation(config *transport_tpg.Config, d *schema.ResourceData, project string, billingProject string, userAgent string, response map[string]interface{}) error {
 	var opRes map[string]interface{}
 	err := WorkbenchOperationWaitTimeWithResponse(
@@ -238,6 +238,7 @@ func resizeWorkbenchInstanceDisk(config *transport_tpg.Config, d *schema.Resourc
 	  UserAgent: userAgent,
 	  Body: diskObj,
 	  Timeout: d.Timeout(schema.TimeoutUpdate),
+	  ErrorRetryPredicates: []transport_tpg.RetryErrorPredicateFunc{transport_tpg.IsWorkbenchQueueError},
 	})
   
 	if err != nil {
